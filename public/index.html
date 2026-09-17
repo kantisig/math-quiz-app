@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เข้าสู่ระบบ - Calculus Quiz System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white p-8 rounded-2xl shadow-lg max-w-md w-full space-y-6">
+        <div class="text-center">
+            <h1 class="text-2xl font-bold text-slate-800">📐 ระบบสอบออนไลน์</h1>
+            <p class="text-sm text-slate-500 mt-1">วิชา Calculus Derivatives</p>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">ชื่อผู้ใช้งาน (Username)</label>
+                <input type="text" id="username" required placeholder="กรอก Username" 
+                    class="w-full border px-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">รหัสผ่าน (Password)</label>
+                <input type="password" id="password" required placeholder="กรอก Password" 
+                    class="w-full border px-4 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <button type="submit" 
+                class="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 transition duration-200">
+                เข้าสู่ระบบ
+            </button>
+        </form>
+
+        <div id="errorMsg" class="hidden text-red-500 text-sm text-center font-medium bg-red-50 p-2.5 rounded-lg border border-red-200"></div>
+    </div>
+
+    <script>
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+
+            errorMsg.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    errorMsg.innerText = data.error || 'เข้าสู่ระบบไม่สำเร็จ';
+                    errorMsg.classList.remove('hidden');
+                    return;
+                }
+
+                // กรณีโดนบังคับเปลี่ยนรหัสผ่าน (เข้าครั้งแรก)
+                if (data.mustChangePassword) {
+                    alert('คุณต้องเปลี่ยนรหัสผ่านใหม่ก่อนเข้าใช้งาน');
+                    window.location.href = '/profile.html';
+                    return;
+                }
+
+                // นำทางตาม Role ของผู้ใช้
+                if (data.role === 'admin') {
+                    window.location.href = '/admin.html';
+                } else {
+                    window.location.href = '/student.html';
+                }
+
+            } catch (err) {
+                errorMsg.innerText = 'ไม่สามารถเชื่อมต่อ Server ได้';
+                errorMsg.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
