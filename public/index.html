@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>Calculus Quiz System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 p-6">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-xl shadow-md">
+        
+        <!-- Auth Section -->
+        <div id="loginSection" class="space-y-4">
+            <h2 class="text-xl font-bold">เข้าสู่ระบบ</h2>
+            <input id="username" type="text" placeholder="Username" class="border p-2 rounded w-full">
+            <input id="password" type="password" placeholder="Password" class="border p-2 rounded w-full">
+            <button onclick="login()" class="bg-indigo-600 text-white px-4 py-2 rounded">Login</button>
+        </div>
+
+        <!-- Main Panel (Hidden by default) -->
+        <div id="mainPanel" class="hidden space-y-6">
+            <div class="flex justify-between items-center border-b pb-4">
+                <span id="userBadge" class="font-bold"></span>
+                <button onclick="showProfile()" class="text-sm bg-slate-200 px-3 py-1 rounded">Profile</button>
+            </div>
+
+            <!-- Admin Controls -->
+            <div id="adminControls" class="hidden space-y-4 bg-slate-50 p-4 rounded border">
+                <h3 class="font-bold text-lg">Admin Panel</h3>
+                <div>
+                    <label class="block text-sm font-medium">Upload JSON Questions:</label>
+                    <input type="file" id="jsonInput" accept=".json" class="mt-1">
+                    <button onclick="uploadJSON()" class="bg-emerald-600 text-white px-3 py-1 rounded text-sm mt-2">Upload</button>
+                </div>
+                <div id="subjectToggles" class="space-y-2"></div>
+            </div>
+
+            <!-- Student View -->
+            <div id="studentControls" class="hidden space-y-4">
+                <h3 class="font-bold text-lg">แบบฝึกหัดที่เปิดใช้งาน</h3>
+                <div id="quizContainer" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function login() {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('username').value,
+                    password: document.getElementById('password').value
+                })
+            });
+            const data = await res.json();
+            if(data.success) {
+                if(data.mustChangePassword) {
+                    const newPw = prompt("กรุณาเปลี่ยนรหัสผ่านสำหรับการเข้าใช้งานครั้งแรก:");
+                    await fetch('/api/change-password', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ newPassword: newPw })
+                    });
+                }
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('mainPanel').classList.remove('hidden');
+                document.getElementById('userBadge').innerText = `Role: ${data.role}`;
+                if(data.role === 'admin') loadAdminView();
+                else loadStudentView();
+            } else alert(data.error);
+        }
+
+        async function uploadJSON() {
+            const file = document.getElementById('jsonInput').files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            await fetch('/api/admin/upload-json', { method: 'POST', body: formData });
+            alert('Upload Complete');
+        }
+
+        async function loadAdminView() {
+            document.getElementById('adminControls').classList.remove('hidden');
+            const res = await fetch('/api/admin/subjects');
+            const subjects = await res.json();
+            const container = document.getElementById('subjectToggles');
+            container.innerHTML = subjects.map(s => `
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" ${s.is_active ? 'checked' : ''} onchange="toggleSubject('${s.subject_name}', this.checked)">
+                    <span>${s.subject_name}</span>
+                </label>
+            `).join('');
+        }
+
+        async function toggleSubject(subject_name, is_active) {
+            await fetch('/api/admin/toggle-subject', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ subject_name, is_active })
+            });
+        }
+
+        async function loadStudentView() {
+            document.getElementById('studentControls').classList.remove('hidden');
+            const res = await fetch('/api/student/questions');
+            const questions = await res.json();
+            const container = document.getElementById('quizContainer');
+            container.innerHTML = questions.map((q, idx) => `
+                <div class="border p-4 rounded space-y-2">
+                    <p class="font-medium">ข้อ ${idx+1}: ${q.question}</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        ${q.choices.map((c, i) => `
+                            <button onclick="submitAnswer(${q.id}, ${i})" class="border p-2 rounded hover:bg-slate-100 text-left">${c}</button>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+            setTimeout(() => renderMathInElement(document.body), 100);
+        }
+
+        async function submitAnswer(qId, choiceIdx) {
+            const res = await fetch('/api/student/submit-answer', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ question_id: qId, chosen_choice: choiceIdx })
+            });
+            const data = await res.json();
+            alert(data.isCorrect ? 'ถูกต้อง!' : 'ตอบไม่ถูกต้อง');
+        }
+    </script>
+</body>
+</html>
