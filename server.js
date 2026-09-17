@@ -4,11 +4,11 @@ const bcrypt = require('bcrypt');
 const session = require('express-session');
 const multer = require('multer');
 const path = require('path');
+const Groq = require('groq-sdk');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ตั้งค่า Database Connection พร้อม SSL สำหรับ Render
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
@@ -22,10 +22,8 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Auto-Migration & Init Default Admin
 async function initDB() {
   try {
-    // 1. สร้างตาราง users
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -37,7 +35,6 @@ async function initDB() {
       );
     `);
 
-    // 2. สร้างตาราง active_subjects
     await pool.query(`
       CREATE TABLE IF NOT EXISTS active_subjects (
         subject_name VARCHAR(50) PRIMARY KEY,
@@ -45,7 +42,6 @@ async function initDB() {
       );
     `);
 
-    // 3. สร้างตาราง questions
     await pool.query(`
       CREATE TABLE IF NOT EXISTS questions (
         id SERIAL PRIMARY KEY,
@@ -59,7 +55,6 @@ async function initDB() {
       );
     `);
 
-    // 4. สร้างตาราง user_quiz_history
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_quiz_history (
         id SERIAL PRIMARY KEY,
@@ -71,7 +66,6 @@ async function initDB() {
       );
     `);
 
-    // 5. สร้างตาราง ai_chat_logs
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ai_chat_logs (
         id SERIAL PRIMARY KEY,
@@ -82,7 +76,6 @@ async function initDB() {
       );
     `);
 
-    // 6. ตรวจสอบและสร้าง Default Admin
     const adminCheck = await pool.query("SELECT * FROM users WHERE username = 'admin'");
     if (adminCheck.rows.length === 0) {
       const hash = await bcrypt.hash('thisisnotpassword', 10);
@@ -92,40 +85,27 @@ async function initDB() {
       );
       console.log("Default Admin created successfully.");
     }
-    
-    console.log("Database & Tables initialized successfully!");
+    console.log("Database initialized successfully!");
   } catch (err) {
     console.error("Database initialization error:", err.message);
   }
 }
-
-// รันฟังก์ชันสร้างตารางเมื่อเริ่ม Server
 initDB();
 
-// Auth Middlewares
 const auth = (req, res, next) => req.session.user ? next() : res.status(401).json({ error: 'Unauthorized' });
 const isAdmin = (req, res, next) => req.session.user && req.session.user.role === 'admin' ? next() : res.status(403).json({ error: 'Forbidden' });
 
-// API: Auth & Profile
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
-    }
+    if (!username || !password) return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
 
     const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-    if (userCheck.rows.length > 0) {
-      return res.status(400).json({ error: 'Username นี้ถูกใช้งานแล้ว' });
-    }
+    if (userCheck.rows.length > 0) return res.status(400).json({ error: 'Username นี้ถูกใช้งานแล้ว' });
 
     const hash = await bcrypt.hash(password, 10);
-    await pool.query(
-      "INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, 'student', FALSE)",
-      [username, hash]
-    );
-
-    res.json({ success: true, message: 'สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ' });
+    await pool.query("INSERT INTO users (username, password_hash, role) VALUES ($1, $2, 'student')", [username, hash]);
+    res.json({ success: true, message: 'สมัครสมาชิกสำเร็จ!' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -149,32 +129,14 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.json({ success: true });
-  });
+  req.session.destroy(() => res.json({ success: true }));
 });
 
-app.post('/api/change-password', auth, async (req, res) => {
-  try {
-    const { newPassword } = req.body;
-    if (!newPassword) return res.status(400).json({ error: 'กรุณากรอกรหัสผ่านใหม่' });
-
-    const hash = await bcrypt.hash(newPassword, 10);
-    await pool.query('UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2', [hash, req.session.user.id]);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// API: Admin Operations
 app.post('/api/admin/upload-json', isAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'กรุณาอัปโหลดไฟล์ JSON' });
 
     const questions = JSON.parse(req.file.buffer.toString());
-    if (!Array.isArray(questions)) return res.status(400).json({ error: 'โครงสร้าง JSON ต้องเป็น Array [...]' });
-
     for (const q of questions) {
       await pool.query(
         'INSERT INTO questions (subject, topic, question, choices, correct_choice, difficulty) VALUES ($1, $2, $3, $4, $5, $6)',
@@ -197,26 +159,6 @@ app.get('/api/admin/questions', isAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/admin/subjects', isAdmin, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM active_subjects');
-    res.json(result.rows);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/admin/toggle-subject', isAdmin, async (req, res) => {
-  try {
-    const { subject_name, is_active } = req.body;
-    await pool.query('UPDATE active_subjects SET is_active = $1 WHERE subject_name = $2', [is_active, subject_name]);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// API: Student Quiz & History
 app.get('/api/student/questions', auth, async (req, res) => {
   try {
     const query = `
@@ -239,7 +181,6 @@ app.post('/api/student/submit-answer', auth, async (req, res) => {
     if (qRes.rows.length === 0) return res.status(404).json({ error: 'Question not found' });
 
     const isCorrect = qRes.rows[0].correct_choice === parseInt(chosen_choice);
-
     await pool.query(
       'INSERT INTO user_quiz_history (user_id, question_id, chosen_choice, is_correct) VALUES ($1, $2, $3, $4)',
       [req.session.user.id, question_id, chosen_choice, isCorrect]
@@ -252,16 +193,26 @@ app.post('/api/student/submit-answer', auth, async (req, res) => {
 
 app.post('/api/student/ai-chat', auth, async (req, res) => {
   try {
-    const { prompt } = req.body;
-    const response = "ระบบบันทึกคำถามของคุณแล้ว: " + prompt; 
+    const { prompt, apiKey, questionText } = req.body;
+    if (!apiKey) return res.status(400).json({ response: 'กรุณากรอก Groq API Key ในช่องด้านบนก่อนครับ' });
+
+    const groq = new Groq({ apiKey });
+    const completion = await groq.chat.completions.create({
+      messages: [
+        { role: 'system', content: 'คุณคือ AI Tutor วิชา Calculus ให้ตอบสั้น กระชับ อธิบายเป็นขั้นตอน ภาษาไทยเข้าใจง่าย' },
+        { role: 'user', content: `โจทย์ปัจจุบัน: ${questionText || 'ไม่มี'}\nคำถาม: ${prompt}` }
+      ],
+      model: 'llama-3.3-70b-versatile',
+    });
+
+    const response = completion.choices[0]?.message?.content || 'ไม่สามารถประมวลผลคำตอบได้';
     await pool.query('INSERT INTO ai_chat_logs (user_id, prompt, response) VALUES ($1, $2, $3)', [req.session.user.id, prompt, response]);
     res.json({ response });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ response: `เกิดข้อผิดพลาด: ${e.message}` });
   }
 });
 
-// Static Routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
