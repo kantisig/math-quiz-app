@@ -107,6 +107,30 @@ const auth = (req, res, next) => req.session.user ? next() : res.status(401).jso
 const isAdmin = (req, res, next) => req.session.user && req.session.user.role === 'admin' ? next() : res.status(403).json({ error: 'Forbidden' });
 
 // API: Auth & Profile
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'กรุณากรอก Username และ Password' });
+    }
+
+    const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (userCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'Username นี้ถูกใช้งานแล้ว' });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    await pool.query(
+      "INSERT INTO users (username, password_hash, role, must_change_password) VALUES ($1, $2, 'student', FALSE)",
+      [username, hash]
+    );
+
+    res.json({ success: true, message: 'สมัครสมาชิกสำเร็จ! กรุณาเข้าสู่ระบบ' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -124,9 +148,17 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.post('/api/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.json({ success: true });
+  });
+});
+
 app.post('/api/change-password', auth, async (req, res) => {
   try {
     const { newPassword } = req.body;
+    if (!newPassword) return res.status(400).json({ error: 'กรุณากรอกรหัสผ่านใหม่' });
+
     const hash = await bcrypt.hash(newPassword, 10);
     await pool.query('UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2', [hash, req.session.user.id]);
     res.json({ success: true });
@@ -138,17 +170,21 @@ app.post('/api/change-password', auth, async (req, res) => {
 // API: Admin Operations
 app.post('/api/admin/upload-json', isAdmin, upload.single('file'), async (req, res) => {
   try {
+    if (!req.file) return res.status(400).json({ error: 'กรุณาอัปโหลดไฟล์ JSON' });
+
     const questions = JSON.parse(req.file.buffer.toString());
+    if (!Array.isArray(questions)) return res.status(400).json({ error: 'โครงสร้าง JSON ต้องเป็น Array [...]' });
+
     for (const q of questions) {
       await pool.query(
         'INSERT INTO questions (subject, topic, question, choices, correct_choice, difficulty) VALUES ($1, $2, $3, $4, $5, $6)',
-        [q.subject, q.topic, q.question, JSON.stringify(q.choices), q.correct_choice, q.difficulty]
+        [q.subject, q.topic, q.question, JSON.stringify(q.choices), parseInt(q.correct_choice), q.difficulty]
       );
       await pool.query('INSERT INTO active_subjects (subject_name, is_active) VALUES ($1, TRUE) ON CONFLICT DO NOTHING', [q.subject]);
     }
     res.json({ success: true, count: questions.length });
   } catch (e) {
-    res.status(400).json({ error: 'Invalid JSON format or Database error' });
+    res.status(400).json({ error: `Upload Failed: ${e.message}` });
   }
 });
 
@@ -202,7 +238,7 @@ app.post('/api/student/submit-answer', auth, async (req, res) => {
     const qRes = await pool.query('SELECT correct_choice FROM questions WHERE id = $1', [question_id]);
     if (qRes.rows.length === 0) return res.status(404).json({ error: 'Question not found' });
 
-    const isCorrect = qRes.rows[0].correct_choice === chosen_choice;
+    const isCorrect = qRes.rows[0].correct_choice === parseInt(chosen_choice);
 
     await pool.query(
       'INSERT INTO user_quiz_history (user_id, question_id, chosen_choice, is_correct) VALUES ($1, $2, $3, $4)',
@@ -225,7 +261,7 @@ app.post('/api/student/ai-chat', auth, async (req, res) => {
   }
 });
 
-// ให้หน้าแรกส่งไฟล์ index.html
+// Static Routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
