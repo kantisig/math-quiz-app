@@ -2,106 +2,339 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <title>Admin Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathQuiz Dashboard (อาจารย์)</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js สำหรับแสดง Histogram -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body class="bg-slate-100 p-6">
-    <div class="max-w-5xl mx-auto space-y-6">
-        <div class="flex justify-between items-center bg-white p-4 rounded-xl shadow">
-            <h1 class="text-2xl font-bold text-slate-800">👑 Admin Dashboard</h1>
-            <div class="space-x-2">
-                <a href="/profile.html" class="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium">Profile</a>
-                <button onclick="logout()" class="bg-rose-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium">Logout</button>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+    <!-- Navbar Header -->
+    <header class="bg-[#4338ca] text-white px-6 py-3.5 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="bg-indigo-500 p-1.5 rounded-lg">
+                <i class="fa-solid fa-square-root-variable text-xl"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-wide">MathQuiz Dashboard</h1>
+            <span class="bg-indigo-800/60 text-indigo-200 text-xs px-2.5 py-1 rounded-full border border-indigo-400/30">อาจารย์</span>
+        </div>
+        
+        <div class="flex items-center space-x-2 text-xs font-semibold">
+            <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-file-csv"></i>
+                <span>ส่งออกไฟล์ CSV</span>
+            </button>
+            <button onclick="downloadTemplate()" class="bg-indigo-800 hover:bg-indigo-900 text-white px-3 py-2 rounded-lg flex items-center space-x-1.5 transition">
+                <span>JSON Template</span>
+            </button>
+            <a href="/student.html" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg flex items-center space-x-1.5 transition">
+                <i class="fa-solid fa-user-graduate"></i>
+                <span>หน้านักเรียน</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="p-6 max-w-[1600px] mx-auto space-y-6">
+
+        <!-- Section 1: Upload & Exam Control Panel -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Box 1: คลังข้อสอบ -->
+            <div class="lg:col-span-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                            <span class="text-amber-500">📁</span>
+                            <span>1. คลังข้อสอบ (รองรับหลายไฟล์)</span>
+                        </h2>
+                        <button onclick="clearBank()" class="text-xs text-red-500 hover:underline">ล้างคลัง</button>
+                    </div>
+
+                    <div class="space-y-3">
+                        <input type="file" id="jsonFileInput" multiple accept=".json" onchange="handleFileUpload(event)"
+                            class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer">
+                    </div>
+                </div>
+
+                <div id="questionBankStatus" class="mt-6 bg-slate-50 border border-slate-100 rounded-xl p-4 text-center text-xs text-slate-400">
+                    ยังไม่มีข้อสอบในคลัง
+                </div>
+            </div>
+
+            <!-- Box 2: ควบคุมการสอบสด -->
+            <div class="lg:col-span-8 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                            <span class="text-indigo-600">⏱️</span>
+                            <span>2. ควบคุมการสอบสด (Live Exam Settings)</span>
+                        </h2>
+                        <span id="examStatusBadge" class="bg-slate-100 text-slate-500 text-xs px-2.5 py-1 rounded-full border border-slate-200">รอเปิดการสอบ</span>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-4">กำหนดรูปแบบการสุ่ม จำนวนข้อ เงื่อนไขการเฉลย และเวลาเปิดสอบ</p>
+
+                    <!-- Settings Controls Row -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-center bg-slate-50 p-3.5 rounded-xl border border-slate-100 text-xs">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-600 font-medium">สุ่มคำถาม:</span>
+                            <input type="checkbox" id="randomizeCheck" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" checked>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-600 font-medium">จำนวนที่สุ่ม (ข้อ):</span>
+                            <input type="text" id="questionLimit" value="ทั้งหมด" class="w-16 bg-white border border-slate-200 rounded px-2 py-1 text-center font-bold text-slate-700">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-600 font-medium">เวลาสอบ (นาที):</span>
+                            <input type="number" id="examDuration" value="10" class="w-16 bg-white border border-slate-200 rounded px-2 py-1 text-center font-bold text-slate-700">
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-600 font-medium">อนุญาตให้ดูเฉลย:</span>
+                            <select id="revealAnswerSelect" class="bg-white border border-slate-200 rounded px-2 py-1 text-slate-700 outline-none">
+                                <option value="instant">เฉลยทันทีหลังส่ง</option>
+                                <option value="end">เฉลยเมื่อจบการสอบ</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Button & Timer -->
+                <div class="flex justify-between items-center mt-6 pt-2">
+                    <button id="startExamBtn" onclick="toggleExam()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl flex items-center space-x-2 shadow-md transition text-xs">
+                        <i class="fa-solid fa-play"></i>
+                        <span>เริ่มการสอบ</span>
+                    </button>
+                    <div id="timerDisplay" class="text-2xl font-black text-indigo-900 tracking-wider">
+                        00:00
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Section 2: 5 Stats Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <p class="text-xs font-semibold text-slate-400 mb-2">คะแนนเฉลี่ย (Mean)</p>
+                <p id="meanScore" class="text-2xl font-bold text-indigo-600">0</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <p class="text-xs font-semibold text-slate-400 mb-2">คะแนนสูงสุด (Max)</p>
+                <p id="maxScore" class="text-2xl font-bold text-emerald-600">0</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <p class="text-xs font-semibold text-slate-400 mb-2">คะแนนต่ำสุด (Min)</p>
+                <p id="minScore" class="text-2xl font-bold text-red-500">0</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <p class="text-xs font-semibold text-slate-400 mb-2">ส่วนเบี่ยงเบน (SD)</p>
+                <p id="sdScore" class="text-2xl font-bold text-amber-500">0</p>
+            </div>
+
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm text-center">
+                <p class="text-xs font-semibold text-slate-400 mb-2">อัตราผ่าน (>=50%)</p>
+                <p id="passRate" class="text-2xl font-bold text-blue-600">0%</p>
+            </div>
+
+        </div>
+
+        <!-- Section 3: Histogram & Leaderboard -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Histogram Card -->
+            <div class="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                        <span class="text-indigo-500">📊</span>
+                        <span>การกระจายคะแนน (Histogram)</span>
+                    </h2>
+                    <span id="submittedCountBadge" class="bg-slate-100 text-indigo-600 text-[11px] font-bold px-2.5 py-0.5 rounded-full">ส่งแล้ว <span id="submittedCount">0</span> คน</span>
+                </div>
+
+                <div class="h-64 relative flex items-center justify-center">
+                    <canvas id="histogramChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Leaderboard Card -->
+            <div class="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="mb-4">
+                    <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                        <span class="text-amber-500">🏆</span>
+                        <span>ตารางอันดับผู้ทำคะแนนสูงสุด (Leaderboard)</span>
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">เรียงลำดับตามคะแนนมากสุด และตามด้วยเวลาที่ใช้น้อยที่สุด</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                            <tr>
+                                <th class="p-3 w-16 text-center">อันดับ</th>
+                                <th class="p-3">ชื่อ-นามสกุล</th>
+                                <th class="p-3 text-center">คะแนน</th>
+                                <th class="p-3 text-center">เวลาที่ใช้</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="4" class="text-center py-12 text-slate-400 font-medium">ยังไม่มีผู้ส่งคำตอบ</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Section 4: Item Analysis -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="mb-4">
+                <h2 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                    <span class="text-rose-500">🎯</span>
+                    <span>วิเคราะห์ข้อที่ตอบผิดเยอะที่สุด (Item Analysis)</span>
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5">เรียงลำดับข้อสอบที่มีอัตราการตอบผิดสูงสุดเพื่อใช้อธิบายเฉลยเพิ่มเติม</p>
+            </div>
+
+            <div id="itemAnalysisContainer" class="py-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                ยังไม่มีข้อมูลการตอบข้อสอบเพื่อวิเคราะห์
             </div>
         </div>
 
-        <!-- Section 1: Upload JSON -->
-        <div class="bg-white p-6 rounded-xl shadow space-y-3">
-            <h2 class="text-lg font-bold text-slate-700">📤 1. อัปโหลดชุดโจทย์แบบฝึกหัด (.JSON)</h2>
-            <div class="flex gap-3">
-                <input type="file" id="jsonFile" accept=".json" class="block border p-2 rounded-lg text-sm flex-1">
-                <button onclick="uploadJSON()" class="bg-indigo-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-indigo-700">Upload</button>
-            </div>
-        </div>
+    </main>
 
-        <!-- Section 2: Manage Active Subjects -->
-        <div class="bg-white p-6 rounded-xl shadow space-y-3">
-            <h2 class="text-lg font-bold text-slate-700">⚙️ 2. จัดการวิชาที่เปิดให้นักเรียนทำ (Active / Inactive)</h2>
-            <div id="subjectList" class="grid grid-cols-2 sm:grid-cols-3 gap-3"></div>
-        </div>
-
-        <!-- Section 3: Questions List -->
-        <div class="bg-white p-6 rounded-xl shadow space-y-4">
-            <h2 class="text-lg font-bold text-slate-700">📚 3. รายการโจทย์ในฐานข้อมูลทั้งหมด</h2>
-            <div id="questionsContainer" class="space-y-3 max-h-[500px] overflow-y-auto pr-2"></div>
-        </div>
-    </div>
-
+    <!-- Client Script -->
     <script>
-        async function loadSubjects() {
-            const res = await fetch('/api/admin/subjects');
-            const data = await res.json();
-            document.getElementById('subjectList').innerHTML = data.map(s => `
-                <label class="flex items-center space-x-3 p-3 border rounded-xl bg-slate-50 cursor-pointer hover:bg-slate-100">
-                    <input type="checkbox" ${s.is_active ? 'checked' : ''} onchange="toggleSubject('${s.subject_name}', this.checked)" class="w-5 h-5 text-indigo-600 rounded">
-                    <span class="font-bold text-slate-800">${s.subject_name}</span>
-                </label>
-            `).join('');
-        }
+        let chartInstance = null;
 
-        async function toggleSubject(subject_name, is_active) {
-            await fetch('/api/admin/toggle-subject', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ subject_name, is_active })
+        function initChart() {
+            const ctx = document.getElementById('histogramChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['0-2', '3-4', '5-6', '7-8', '9-10'],
+                    datasets: [{
+                        label: 'จำนวนนักเรียน (คน)',
+                        data: [0, 0, 0, 0, 0],
+                        backgroundColor: '#818cf8',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                        x: { grid: { display: false } }
+                    }
+                }
             });
         }
 
-        async function uploadJSON() {
-            const file = document.getElementById('jsonFile').files[0];
-            if(!file) return alert('กรุณาเลือกไฟล์ JSON ก่อน');
+        async function handleFileUpload(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+
             const formData = new FormData();
-            formData.append('file', file);
-            const res = await fetch('/api/admin/upload-json', { method: 'POST', body: formData });
-            const data = await res.json();
-            if(data.success) {
-                alert(`อัปโหลดสำเร็จทั้งหมด ${data.count} ข้อ`);
-                loadSubjects();
-                loadQuestions();
-            } else alert(data.error);
+            formData.append('file', files[0]);
+
+            try {
+                const res = await fetch('/api/admin/upload-json', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    document.getElementById('questionBankStatus').innerHTML = `
+                        <span class="text-emerald-600 font-bold">✓ นำเข้าข้อสอบสำเร็จ (${data.count} ข้อ)</span>
+                    `;
+                    fetchQuestions();
+                } else {
+                    alert(data.error || 'การอัปโหลดล้มเหลว');
+                }
+            } catch (err) {
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+            }
         }
 
-        async function loadQuestions() {
-            const res = await fetch('/api/admin/questions');
-            const data = await res.json();
-            document.getElementById('questionsContainer').innerHTML = data.map((q, i) => `
-                <div class="border p-4 rounded-xl space-y-2 bg-slate-50">
-                    <div class="flex justify-between text-xs text-slate-500 font-bold">
-                        <span>[${q.subject.toUpperCase()}] ${q.topic}</span>
-                        <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-700">${q.difficulty}</span>
-                    </div>
-                    <div class="font-medium text-slate-800">ข้อ ${i+1}: ${q.question}</div>
-                    <div class="grid grid-cols-2 gap-2 text-sm pt-2">
-                        ${q.choices.map((c, idx) => `
-                            <div class="p-2 border rounded ${idx === q.correct_choice ? 'bg-emerald-100 border-emerald-400 font-bold text-emerald-800' : 'bg-white'}">
-                                ${['A','B','C','D'][idx]}. ${c}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `).join('');
-            setTimeout(() => renderMathInElement(document.body), 100);
+        async function fetchQuestions() {
+            try {
+                const res = await fetch('/api/admin/questions');
+                if (!res.ok) return;
+                const questions = await res.json();
+                
+                if (questions.length > 0) {
+                    document.getElementById('questionBankStatus').innerHTML = `
+                        <span class="text-indigo-600 font-bold">มีข้อสอบในคลังทั้งหมด ${questions.length} ข้อ</span>
+                    `;
+                }
+            } catch (e) {
+                console.error(e);
+            }
         }
 
-        function logout() {
-            fetch('/api/logout', { method: 'POST' }).then(() => window.location.href = '/index.html');
+        function clearBank() {
+            if (confirm('คุณต้องการล้างคลังข้อสอบทั้งหมดใช่หรือไม่?')) {
+                document.getElementById('questionBankStatus').innerText = "ยังไม่มีข้อสอบในคลัง";
+                document.getElementById('jsonFileInput').value = "";
+            }
         }
 
-        loadSubjects();
-        loadQuestions();
+        function toggleExam() {
+            const btn = document.getElementById('startExamBtn');
+            const badge = document.getElementById('examStatusBadge');
+            
+            if (btn.classList.contains('bg-emerald-600')) {
+                btn.className = "bg-rose-600 hover:bg-rose-700 text-white font-bold px-5 py-2.5 rounded-xl flex items-center space-x-2 shadow-md transition text-xs";
+                btn.innerHTML = `<i class="fa-solid fa-stop"></i><span>ยุติการสอบ</span>`;
+                badge.className = "bg-emerald-50 text-emerald-600 text-xs px-2.5 py-1 rounded-full border border-emerald-200 font-bold";
+                badge.innerText = "กำลังเปิดการสอบสด";
+            } else {
+                btn.className = "bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2.5 rounded-xl flex items-center space-x-2 shadow-md transition text-xs";
+                btn.innerHTML = `<i class="fa-solid fa-play"></i><span>เริ่มการสอบ</span>`;
+                badge.className = "bg-slate-100 text-slate-500 text-xs px-2.5 py-1 rounded-full border border-slate-200";
+                badge.innerText = "รอเปิดการสอบ";
+            }
+        }
+
+        function downloadTemplate() {
+            const template = [
+                {
+                    "subject": "Calculus",
+                    "topic": "Derivatives",
+                    "question": "อนุพันธ์ของ $f(x) = x^2$ คือข้อใด",
+                    "choices": ["$2x$", "$x$", "$2$", "$x^2$"],
+                    "correct_choice": 0,
+                    "difficulty": "easy"
+                }
+            ];
+            const blob = new Blob([JSON.stringify(template, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "quiz_template.json";
+            a.click();
+        }
+
+        function exportCSV() {
+            alert('กำลังเตรียมส่งออกข้อมูลเป็น CSV');
+        }
+
+        window.onload = () => {
+            initChart();
+            fetchQuestions();
+        };
     </script>
 </body>
 </html>
